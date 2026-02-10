@@ -1,0 +1,165 @@
+name: Pre Release SDK Integration Tests
+
+on: [push]
+
+jobs:
+  verify-cocoapods-iOS:
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - name: Select Xcode version
+        run: sudo xcode-select -s '/Applications/Xcode_16.4.app/Contents/Developer'
+      - name: Check out code
+        uses: actions/checkout@v4
+      - name: Install pod, build project and run tests
+        run: |
+            echo "branch=${{ github.ref }}" >> $GITHUB_OUTPUT
+            ./scripts/getSimulator
+            DESTINATION="platform=iOS Simulator,name=$(cat ./iphoneSim),OS=latest"
+            cd  SDKIntegrationTestApps/iOSReleaseTest-Cocoapods/
+            pod install
+            xcodebuild test -scheme iOSReleaseTest -workspace iOSReleaseTest.xcworkspace -destination "$DESTINATION" | xcpretty && exit ${PIPESTATUS[0]}
+  verify-carthage-iOS:
+    runs-on: macos-15
+    steps:
+      - name: Select Xcode version
+        run: sudo xcode-select -s '/Applications/Xcode_16.4.app/Contents/Developer'
+      - name: Check out code
+        uses: actions/checkout@v4
+      - name: Create Cart File, run carthage command, build project and run tests
+        env:
+            BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+        run: |
+            CURR_DIR=$(PWD)
+            ./scripts/getSimulator
+            DESTINATION="platform=iOS Simulator,name=$(cat ./iphoneSim),OS=latest"
+            cd  SDKIntegrationTestApps/iOSReleaseTest-Carthage/
+            echo "git \"file://${CURR_DIR}\" \"$BRANCH_NAME\" " >> cartfile
+            carthage update --use-xcframeworks
+            xcodebuild test -scheme iOSReleaseTest -project iOSReleaseTest.xcodeproj -destination "$DESTINATION" | xcpretty && exit ${PIPESTATUS[0]}
+  verify-SPM-iOS:
+    runs-on: macos-latest
+    steps:
+      - name: Select Xcode version
+        run: sudo xcode-select -s '/Applications/Xcode_16.4.app/Contents/Developer'
+      - name: Check out code
+        uses: actions/checkout@v4
+      - name: Build, run, and capture logs from the app
+        run: |
+            # --- Step 1: Prepare Simulator and Paths ---
+            ./scripts/getSimulator
+            SIMULATOR_NAME=$(cat ./iphoneSim)
+            DESTINATION="platform=iOS Simulator,name=$SIMULATOR_NAME,OS=latest"
+            LOG_ARTIFACT_PATH="build/simulator_system.log"
+
+            # --- Step 2: Build the app ---
+            echo "--- Building the app ---"
+            cd SDKIntegrationTestApps/iOSReleaseTest-SPM/
+            xcodebuild build -scheme iOSReleaseTest -project iOSReleaseTest.xcodeproj -destination "$DESTINATION" -derivedDataPath ./build | xcpretty
+            
+            APP_PATH=$(find ./build -name "iOSReleaseTest.app" -print -quit)
+            if [ -z "$APP_PATH" ]; then
+              echo "Error: .app bundle not found!"
+              exit 1
+            fi
+            BUNDLE_ID=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP_PATH/Info.plist")
+            
+            # --- Step 3: Boot Simulator and Capture Logs ---
+            echo "--- Launching app and capturing logs ---"
+            SIMULATOR_UDID=$(xcrun simctl list devices | grep "$SIMULATOR_NAME" | awk 'match($0, /\(([-0-9A-F]+)\)/) { print substr($0, RSTART + 1, RLENGTH - 2) }' | head -n 1)
+            
+            xcrun simctl boot "$SIMULATOR_UDID"
+            xcrun simctl install "$SIMULATOR_UDID" "$APP_PATH"
+            
+            # Start capturing the log stream in the background
+            # We filter by the app's bundle ID to reduce noise
+            xcrun simctl logstream "$SIMULATOR_UDID" --predicate 'subsystem == "com.apple.console" && process == "iOSReleaseTest"' > "$LOG_ARTIFACT_PATH" &
+            LOG_PID=$!
+            
+            # Launch the app
+            xcrun simctl launch --console-pty "$SIMULATOR_UDID" "$BUNDLE_ID"
+            
+            echo "App launched. Waiting for 30 seconds to allow it to run..."
+            sleep 30
+            
+            # Stop the background log capture
+            kill $LOG_PID
+            
+            echo "--- Log capture complete ---"
+            
+      - name: Upload Simulator Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: simulator-logs
+          path: SDKIntegrationTestApps/iOSReleaseTest-SPM/build/simulator_system.log
+      
+  verify-manually-with-xcframework-iOS:
+    runs-on: macos-latest
+    steps:
+      - name: Select Xcode version
+        run: sudo xcode-select -s '/Applications/Xcode_16.4.app/Contents/Developer'
+      - name: Check out code
+        uses: actions/checkout@v4
+      - name: build xcframework, then build project and run tests
+        run: |
+            ./scripts/getSimulator
+            DESTINATION="platform=iOS Simulator,name=$(cat ./iphoneSim),OS=latest"
+            xcodebuild -scheme xcframework
+            cd  SDKIntegrationTestApps/iOSReleaseTest-Manual/
+            xcodebuild test -scheme iOSReleaseTest -project iOSReleaseTest.xcodeproj -destination "$DESTINATION" | xcpretty && exit ${PIPESTATUS[0]}
+  verify-manually-with-StaticFramework-iOS:
+    runs-on: macos-latest
+    steps:
+      - name: Select Xcode version
+        run: sudo xcode-select -s '/Applications/Xcode_16.4.app/Contents/Developer'
+      - name: Check out code
+        uses: actions/checkout@v4
+      - name: build static xcframework, then build project and run tests
+        run: |
+            ./scripts/getSimulator
+            DESTINATION="platform=iOS Simulator,name=$(cat ./iphoneSim),OS=latest"
+            xcodebuild -scheme static-xcframework
+            cd  SDKIntegrationTestApps/iOSReleaseTest-Manual-Static/
+            xcodebuild test -scheme iOSReleaseTest -project iOSReleaseTest.xcodeproj -destination "$DESTINATION" | xcpretty && exit ${PIPESTATUS[0]}
+  verify-cocoapods-tvOS:
+    runs-on: macos-latest
+    steps:
+      - name: Select Xcode version
+        run: sudo xcode-select -s '/Applications/Xcode_16.4.app/Contents/Developer'
+      - name: Check out code
+        uses: actions/checkout@v4
+      - name: Install pod, build project and run tests
+        run: |
+            ./scripts/getSimulator
+            DESTINATION="platform=tvOS Simulator,name=$(cat ./appleTVSim),OS=latest"
+            cd  SDKIntegrationTestApps/tvOSReleaseTest-Cocoapods/
+            pod install
+            xcodebuild test -scheme tvOSReleaseTest -workspace tvOSReleaseTest.xcworkspace -destination "$DESTINATION" | xcpretty && exit ${PIPESTATUS[0]}
+  verify-carthage-tvOS:
+    runs-on: macos-latest
+    steps:
+      - name: Select Xcode version
+        run: sudo xcode-select -s '/Applications/Xcode_16.4.app/Contents/Developer'
+      - name: Check out code
+        uses: actions/checkout@v4
+      - name: Verify Integration using Carthage for tvOS
+        run: |
+            ./scripts/getSimulator
+            DESTINATION="platform=tvOS Simulator,name=$(cat ./appleTVSim),OS=latest"
+            cd  SDKIntegrationTestApps/tvOSReleaseTest-Carthage/
+            echo "Skipping it ... its broken"
+  verify-manually-with-xcframework-tvOS:
+    runs-on: macos-latest
+    steps:
+      - name: Select Xcode version
+        run: sudo xcode-select -s '/Applications/Xcode_16.4.app/Contents/Developer'
+      - name: Check out code
+        uses: actions/checkout@v4
+      - name: build xcframework, then build project and run tests
+        run: |
+            ./scripts/getSimulator
+            DESTINATION="platform=tvOS Simulator,name=$(cat ./appleTVSim),OS=latest"
+            xcodebuild -scheme xcframework
+            cd  SDKIntegrationTestApps/tvOSReleaseTest-Manual/
+            xcodebuild test -scheme tvOSReleaseTest -project tvOSReleaseTest.xcodeproj -destination "$DESTINATION" | xcpretty && exit ${PIPESTATUS[0]}
