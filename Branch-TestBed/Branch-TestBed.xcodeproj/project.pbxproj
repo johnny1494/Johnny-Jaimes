@@ -1275,7 +1275,7 @@
 			packageReferences = (
 				E7AC746E2DB06992002D8C40 /* XCRemoteSwiftPackageReference "GoogleUtilities" */,
 				E7AC74732DB069B2002D8C40 /* XCRemoteSwiftPackageReference "nanopb" */,
-				E7AC74792DB0700D002D8C40 /* XCLocalSwiftPackageReference "../../ios-branch-deep-linking-attribution" */,
+				E7AC74792DB0700D002D8C40 /* XCLocalSwiftPackageReference ".." */,
 			);
 			productRefGroup = 670016611940F51400A9E103 /* Products */;
 			projectDirPath = "";
@@ -2060,9 +2060,9 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		E7AC74792DB0700D002D8C40 /* XCLocalSwiftPackageReference "../../ios-branch-deep-linking-attribution" */ = {
+		E7AC74792DB0700D002D8C40 /* XCLocalSwiftPackageReference ".." */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = "../../ios-branch-deep-linking-attribution";
+			relativePath = "..";
 		};
 /* End XCLocalSwiftPackageReference section */
 
